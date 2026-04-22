@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ["python3", "ffmpeg"]
-
-[phases.install]
-cmds = ["npm install"]
-
-[phases.start]
-cmd = "npm start"
