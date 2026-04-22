@@ -7,19 +7,6 @@ import makeWASocket, {
 import fs from "fs";
 import qrcode from "qrcode-terminal";
 import sharp from "sharp";
-import ffmpeg from "fluent-ffmpeg";
-import ffmpegPath from "ffmpeg-static";
-import { execSync, exec } from "child_process";
-
-ffmpeg.setFfmpegPath(ffmpegPath);
-
-// 🔥 instalar dependencias en runtime
-try {
-  execSync("apt-get update && apt-get install -y python3 ffmpeg yt-dlp");
-  console.log("✅ Python + ffmpeg + yt-dlp listos");
-} catch {
-  console.log("⚠️ Dependencias ya instaladas");
-}
 
 // 🧠 estado por chat
 let esperandoImagen = {};
@@ -54,8 +41,8 @@ async function start() {
     }
 
     if (connection === "close") {
-      console.log("❌ Reconectando...");
-      setTimeout(() => start(), 5000);
+      console.log("❌ Reconectando limpio...");
+      start();
     }
   });
 
@@ -114,7 +101,7 @@ async function start() {
       }
 
       // ========================
-      // 🎵 MUSICA (ANTI BLOQUEO YT)
+      // 🎵 MUSICA (API PRO)
       // ========================
       if (text.toLowerCase().startsWith(".music")) {
         const query = text.replace(".music", "").trim();
@@ -127,50 +114,45 @@ async function start() {
         }
 
         await sock.sendMessage(from, {
-          text: "⏳ Descargando música..."
+          text: "🔎 Buscando música..."
         });
 
-        const filename = `audio_${Date.now()}.mp3`;
+        try {
+          // 🔥 BUSCAR VIDEO
+          const searchRes = await fetch(`https://api.youtubedownloadapi.com/search?q=${encodeURIComponent(query)}`);
+          const searchData = await searchRes.json();
 
-        exec(
-          `yt-dlp --extract-audio --audio-format mp3 \
---user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
---add-header "Accept-Language:en-US,en;q=0.9" \
---no-playlist \
---geo-bypass \
--o "${filename}" "ytsearch1:${query}"`,
-          { timeout: 60000 },
-          async (error, stdout, stderr) => {
-
-            console.log("YT-DLP:", stdout, stderr);
-
-            if (error || !fs.existsSync(filename)) {
-              await sock.sendMessage(from, {
-                text: "❌ YouTube bloqueó la descarga 😢"
-              });
-              return;
-            }
-
-            try {
-              const audio = fs.readFileSync(filename);
-
-              await sock.sendMessage(from, {
-                audio: audio,
-                mimetype: "audio/mpeg"
-              });
-
-              fs.unlinkSync(filename);
-
-              console.log("🎵 música enviada");
-            } catch (err) {
-              console.log("❌ ERROR:", err);
-
-              await sock.sendMessage(from, {
-                text: "❌ Error enviando audio"
-              });
-            }
+          if (!searchData.results || searchData.results.length === 0) {
+            throw new Error("No results");
           }
-        );
+
+          const videoUrl = searchData.results[0].url;
+
+          // 🔥 DESCARGAR AUDIO
+          const dlRes = await fetch(`https://api.youtubedownloadapi.com/download?url=${encodeURIComponent(videoUrl)}&format=mp3`);
+          const dlData = await dlRes.json();
+
+          if (!dlData.link) {
+            throw new Error("No download link");
+          }
+
+          // 🔥 BAJAR AUDIO
+          const audioRes = await fetch(dlData.link);
+          const buffer = Buffer.from(await audioRes.arrayBuffer());
+
+          await sock.sendMessage(from, {
+            audio: buffer,
+            mimetype: "audio/mpeg"
+          });
+
+          console.log("🎵 música enviada");
+        } catch (err) {
+          console.log("❌ ERROR API:", err);
+
+          await sock.sendMessage(from, {
+            text: "❌ Error obteniendo la música"
+          });
+        }
 
         return;
       }
