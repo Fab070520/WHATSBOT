@@ -1,7 +1,8 @@
 import makeWASocket, {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
-  downloadContentFromMessage
+  downloadContentFromMessage,
+  DisconnectReason
 } from "@whiskeysockets/baileys";
 
 import fs from "fs";
@@ -29,7 +30,7 @@ async function start() {
 
   // 🔥 conexión
   sock.ev.on("connection.update", async (update) => {
-    const { connection, qr } = update;
+    const { connection, qr, lastDisconnect } = update;
 
     if (qr) {
       console.log("📱 ESCANEA EL QR:");
@@ -41,8 +42,17 @@ async function start() {
     }
 
     if (connection === "close") {
-      console.log("❌ Reconectando limpio...");
-      start();
+      const reason = lastDisconnect?.error?.output?.statusCode;
+
+      console.log("❌ Conexión cerrada:", reason);
+
+      // 🔥 evita loop infinito
+      if (reason !== DisconnectReason.loggedOut) {
+        console.log("🔄 Reconectando...");
+        setTimeout(() => start(), 5000);
+      } else {
+        console.log("🚪 Sesión cerrada. Borra carpeta auth.");
+      }
     }
   });
 
@@ -101,7 +111,7 @@ async function start() {
       }
 
       // ========================
-      // 🎵 MUSICA (API PRO)
+      // 🎵 MUSICA (FIX REAL)
       // ========================
       if (text.toLowerCase().startsWith(".music")) {
         const query = text.replace(".music", "").trim();
@@ -118,26 +128,26 @@ async function start() {
         });
 
         try {
-          // 🔥 BUSCAR VIDEO
-          const searchRes = await fetch(`https://api.youtubedownloadapi.com/search?q=${encodeURIComponent(query)}`);
-          const searchData = await searchRes.json();
+          // 🔍 buscar video
+          const search = await fetch(`https://api.ryzendesu.vip/api/search/yt?q=${encodeURIComponent(query)}`);
+          const searchData = await search.json();
 
-          if (!searchData.results || searchData.results.length === 0) {
+          if (!searchData.result || searchData.result.length === 0) {
             throw new Error("No results");
           }
 
-          const videoUrl = searchData.results[0].url;
+          const videoUrl = searchData.result[0].url;
 
-          // 🔥 DESCARGAR AUDIO
-          const dlRes = await fetch(`https://api.youtubedownloadapi.com/download?url=${encodeURIComponent(videoUrl)}&format=mp3`);
-          const dlData = await dlRes.json();
+          // 🎧 obtener mp3
+          const dl = await fetch(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(videoUrl)}`);
+          const dlData = await dl.json();
 
-          if (!dlData.link) {
-            throw new Error("No download link");
+          if (!dlData.result || !dlData.result.download) {
+            throw new Error("No download");
           }
 
-          // 🔥 BAJAR AUDIO
-          const audioRes = await fetch(dlData.link);
+          // 📥 descargar audio
+          const audioRes = await fetch(dlData.result.download);
           const buffer = Buffer.from(await audioRes.arrayBuffer());
 
           await sock.sendMessage(from, {
@@ -150,7 +160,7 @@ async function start() {
           console.log("❌ ERROR API:", err);
 
           await sock.sendMessage(from, {
-            text: "❌ Error obteniendo la música"
+            text: "❌ No se pudo obtener la música"
           });
         }
 
