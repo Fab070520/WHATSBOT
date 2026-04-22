@@ -7,11 +7,19 @@ import makeWASocket, {
 import fs from "fs";
 import qrcode from "qrcode-terminal";
 import sharp from "sharp";
-import ytdlp from "yt-dlp-exec";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
+import { execSync } from "child_process";
 
 ffmpeg.setFfmpegPath(ffmpegPath);
+
+// 🔥 instalar python en runtime (clave para Railway)
+try {
+  execSync("apt-get update && apt-get install -y python3 ffmpeg");
+  console.log("✅ Python/ffmpeg listos");
+} catch (e) {
+  console.log("⚠️ Python ya estaba o no se pudo instalar");
+}
 
 // 🧠 estado por chat
 let esperandoImagen = {};
@@ -28,7 +36,7 @@ async function start() {
 
   sock.ev.on("creds.update", saveCreds);
 
-  // 🔥 CONEXIÓN + RECONEXIÓN
+  // 🔥 conexión
   sock.ev.on("connection.update", async (update) => {
     const { connection, qr, lastDisconnect } = update;
 
@@ -42,14 +50,12 @@ async function start() {
     }
 
     if (connection === "close") {
-      const reason = lastDisconnect?.error?.output?.statusCode;
-      console.log("❌ CONEXIÓN CERRADA, reconectando...", reason);
-
+      console.log("❌ Reconectando...");
       setTimeout(() => start(), 5000);
     }
   });
 
-  // 🤖 MENSAJES
+  // 🤖 mensajes
   sock.ev.on("messages.upsert", async ({ messages }) => {
     const msg = messages[0];
     if (!msg.message) return;
@@ -62,24 +68,21 @@ async function start() {
       msg.message?.imageMessage?.caption ||
       "";
 
-    console.log("📩 MENSAJE:", text);
+    console.log("📩:", text);
 
     try {
       // ========================
-      // 📸 COMANDO STICKER
+      // 📸 STICKER
       // ========================
       if (text.toLowerCase() === ".sticker") {
         esperandoImagen[from] = true;
 
         await sock.sendMessage(from, {
-          text: "📸 Envíame la imagen para hacer sticker"
+          text: "📸 Envíame la imagen"
         });
         return;
       }
 
-      // ========================
-      // 📸 RECIBIR IMAGEN
-      // ========================
       if (msg.message.imageMessage && esperandoImagen[from]) {
         esperandoImagen[from] = false;
 
@@ -102,63 +105,61 @@ async function start() {
           .toBuffer();
 
         await sock.sendMessage(from, { sticker });
-
-        console.log("✅ Sticker enviado");
         return;
       }
 
       // ========================
-      // 🎵 COMANDO MUSICA
+      // 🎵 MUSICA
       // ========================
       if (text.toLowerCase().startsWith(".music")) {
         const query = text.replace(".music", "").trim();
 
         if (!query) {
           await sock.sendMessage(from, {
-            text: "❌ Escribe el nombre de la canción"
+            text: "❌ Escribe canción"
           });
           return;
         }
 
         await sock.sendMessage(from, {
-          text: "⏳ Descargando música..."
+          text: "⏳ Descargando..."
         });
 
-        const url = `ytsearch1:${query}`;
+        // 🔥 importar yt-dlp dinámico
+        let ytdlp;
+        try {
+          ytdlp = (await import("yt-dlp-exec")).default;
+        } catch {
+          await sock.sendMessage(from, {
+            text: "❌ yt-dlp no disponible"
+          });
+          return;
+        }
 
-        // 🔥 nombre único
         const base = `audio_${Date.now()}`;
         const output = `${base}.%(ext)s`;
 
-        await ytdlp(url, {
+        await ytdlp(`ytsearch1:${query}`, {
           extractAudio: true,
           audioFormat: "mp3",
           output: output,
-          ffmpegLocation: ffmpegPath,
-          noCheckCertificates: true,
-          preferFreeFormats: true,
-          addHeader: [
-            "referer:youtube.com",
-            "user-agent:googlebot"
-          ]
+          ffmpegLocation: ffmpegPath
         });
 
-        // 🔥 buscar el archivo generado (mp3 o webm convertido)
-        const files = fs.readdirSync(".");
-        const audioFile = files.find(f => f.startsWith(base));
+        const file = fs.readdirSync(".").find(f => f.startsWith(base));
 
-        if (!audioFile) throw new Error("No se encontró el audio");
+        if (!file) throw new Error("no audio");
 
-        const audio = fs.readFileSync(audioFile);
+        const audio = fs.readFileSync(file);
 
         await sock.sendMessage(from, {
           audio: audio,
           mimetype: "audio/mpeg"
         });
 
-        fs.unlinkSync(audioFile);
+        fs.unlinkSync(file);
 
-        console.log("✅ Música enviada");
+        console.log("🎵 enviada");
         return;
       }
 
@@ -166,7 +167,7 @@ async function start() {
       console.log("❌ ERROR:", err);
 
       await sock.sendMessage(from, {
-        text: "❌ Error al descargar la música"
+        text: "❌ Error"
       });
     }
   });
