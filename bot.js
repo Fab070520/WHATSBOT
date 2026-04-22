@@ -9,16 +9,16 @@ import qrcode from "qrcode-terminal";
 import sharp from "sharp";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
-import { execSync } from "child_process";
+import { execSync, exec } from "child_process";
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-// 🔥 instalar python en runtime (clave para Railway)
+// 🔥 instalar TODO en runtime (clave Railway)
 try {
-  execSync("apt-get update && apt-get install -y python3 ffmpeg");
-  console.log("✅ Python/ffmpeg listos");
+  execSync("apt-get update && apt-get install -y python3 ffmpeg yt-dlp");
+  console.log("✅ Python + ffmpeg + yt-dlp listos");
 } catch (e) {
-  console.log("⚠️ Python ya estaba o no se pudo instalar");
+  console.log("⚠️ Dependencias ya instaladas");
 }
 
 // 🧠 estado por chat
@@ -31,14 +31,20 @@ async function start() {
   const sock = makeWASocket({
     auth: state,
     version,
-    printQRInTerminal: false
+    printQRInTerminal: false,
+
+    // 🔥 estabilidad
+    syncFullHistory: false,
+    markOnlineOnConnect: true,
+    keepAliveIntervalMs: 30000,
+    browser: ["Railway Bot", "Chrome", "1.0.0"]
   });
 
   sock.ev.on("creds.update", saveCreds);
 
   // 🔥 conexión
   sock.ev.on("connection.update", async (update) => {
-    const { connection, qr, lastDisconnect } = update;
+    const { connection, qr } = update;
 
     if (qr) {
       console.log("📱 ESCANEA EL QR:");
@@ -105,69 +111,66 @@ async function start() {
           .toBuffer();
 
         await sock.sendMessage(from, { sticker });
+        console.log("✅ sticker enviado");
         return;
       }
 
       // ========================
-      // 🎵 MUSICA
+      // 🎵 MUSICA (FIX REAL)
       // ========================
       if (text.toLowerCase().startsWith(".music")) {
         const query = text.replace(".music", "").trim();
 
         if (!query) {
           await sock.sendMessage(from, {
-            text: "❌ Escribe canción"
+            text: "❌ Escribe una canción"
           });
           return;
         }
 
         await sock.sendMessage(from, {
-          text: "⏳ Descargando..."
+          text: "⏳ Descargando música..."
         });
 
-        // 🔥 importar yt-dlp dinámico
-        let ytdlp;
-        try {
-          ytdlp = (await import("yt-dlp-exec")).default;
-        } catch {
-          await sock.sendMessage(from, {
-            text: "❌ yt-dlp no disponible"
-          });
-          return;
-        }
+        const filename = `audio_${Date.now()}.mp3`;
 
-        const base = `audio_${Date.now()}`;
-        const output = `${base}.%(ext)s`;
+        exec(
+          `yt-dlp -x --audio-format mp3 -o "${filename}" "ytsearch1:${query}"`,
+          async (error) => {
+            if (error) {
+              console.log("❌ yt-dlp error:", error);
 
-        await ytdlp(`ytsearch1:${query}`, {
-          extractAudio: true,
-          audioFormat: "mp3",
-          output: output,
-          ffmpegLocation: ffmpegPath
-        });
+              await sock.sendMessage(from, {
+                text: "❌ Error descargando música"
+              });
+              return;
+            }
 
-        const file = fs.readdirSync(".").find(f => f.startsWith(base));
+            try {
+              const audio = fs.readFileSync(filename);
 
-        if (!file) throw new Error("no audio");
+              await sock.sendMessage(from, {
+                audio: audio,
+                mimetype: "audio/mpeg"
+              });
 
-        const audio = fs.readFileSync(file);
+              fs.unlinkSync(filename);
 
-        await sock.sendMessage(from, {
-          audio: audio,
-          mimetype: "audio/mpeg"
-        });
+              console.log("🎵 música enviada");
+            } catch (err) {
+              console.log("❌ ERROR:", err);
+            }
+          }
+        );
 
-        fs.unlinkSync(file);
-
-        console.log("🎵 enviada");
         return;
       }
 
     } catch (err) {
-      console.log("❌ ERROR:", err);
+      console.log("❌ ERROR GENERAL:", err);
 
       await sock.sendMessage(from, {
-        text: "❌ Error"
+        text: "❌ Ocurrió un error"
       });
     }
   });
