@@ -114,7 +114,7 @@ async function start() {
       }
 
       // ========================
-      // 🎵 MUSICA (FIX FINAL PRO)
+      // 🎵 MUSICA (ANTI BLOQUEO YT)
       // ========================
       if (text.toLowerCase().startsWith(".music")) {
         const query = text.replace(".music", "").trim();
@@ -130,52 +130,43 @@ async function start() {
           text: "⏳ Descargando música..."
         });
 
-        const base = `audio_${Date.now()}`;
-        const m4a = `${base}.m4a`;
-        const mp3 = `${base}.mp3`;
+        const filename = `audio_${Date.now()}.mp3`;
 
         exec(
-          `yt-dlp -f "bestaudio[ext=m4a]/bestaudio" --no-playlist --geo-bypass --no-check-certificates -o "${m4a}" "ytsearch1:${query}"`,
-          { timeout: 40000 },
+          `yt-dlp --extract-audio --audio-format mp3 \
+--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+--add-header "Accept-Language:en-US,en;q=0.9" \
+--no-playlist \
+--geo-bypass \
+-o "${filename}" "ytsearch1:${query}"`,
+          { timeout: 60000 },
           async (error, stdout, stderr) => {
 
             console.log("YT-DLP:", stdout, stderr);
 
-            if (error) {
-              console.log("❌ yt-dlp error:", error);
-
+            if (error || !fs.existsSync(filename)) {
               await sock.sendMessage(from, {
-                text: "❌ Error descargando música"
-              });
-              return;
-            }
-
-            if (!fs.existsSync(m4a)) {
-              await sock.sendMessage(from, {
-                text: "❌ No se pudo obtener el audio"
+                text: "❌ YouTube bloqueó la descarga 😢"
               });
               return;
             }
 
             try {
-              execSync(`ffmpeg -i "${m4a}" -vn -ab 128k -ar 44100 -y "${mp3}"`);
-
-              const audio = fs.readFileSync(mp3);
+              const audio = fs.readFileSync(filename);
 
               await sock.sendMessage(from, {
                 audio: audio,
                 mimetype: "audio/mpeg"
               });
 
-              fs.unlinkSync(m4a);
-              fs.unlinkSync(mp3);
+              fs.unlinkSync(filename);
 
               console.log("🎵 música enviada");
             } catch (err) {
-              console.log("❌ ERROR ffmpeg:", err);
+              console.log("❌ ERROR:", err);
 
               await sock.sendMessage(from, {
-                text: "❌ Error procesando audio"
+                text: "❌ Error enviando audio"
               });
             }
           }
