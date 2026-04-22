@@ -45,7 +45,6 @@ async function start() {
       const reason = lastDisconnect?.error?.output?.statusCode;
       console.log("❌ CONEXIÓN CERRADA, reconectando...", reason);
 
-      // 🔥 evita loops locos
       setTimeout(() => start(), 5000);
     }
   });
@@ -127,27 +126,37 @@ async function start() {
 
         const url = `ytsearch1:${query}`;
 
-        // 🔥 NOMBRE ÚNICO PARA EVITAR ERRORES
-        const filename = `audio_${Date.now()}.mp3`;
+        // 🔥 nombre único
+        const base = `audio_${Date.now()}`;
+        const output = `${base}.%(ext)s`;
 
         await ytdlp(url, {
           extractAudio: true,
           audioFormat: "mp3",
-          output: filename,
+          output: output,
           ffmpegLocation: ffmpegPath,
           noCheckCertificates: true,
           preferFreeFormats: true,
-          addHeader: ["referer:youtube.com", "user-agent:googlebot"]
+          addHeader: [
+            "referer:youtube.com",
+            "user-agent:googlebot"
+          ]
         });
 
-        const audio = fs.readFileSync(filename);
+        // 🔥 buscar el archivo generado (mp3 o webm convertido)
+        const files = fs.readdirSync(".");
+        const audioFile = files.find(f => f.startsWith(base));
+
+        if (!audioFile) throw new Error("No se encontró el audio");
+
+        const audio = fs.readFileSync(audioFile);
 
         await sock.sendMessage(from, {
           audio: audio,
           mimetype: "audio/mpeg"
         });
 
-        fs.unlinkSync(filename);
+        fs.unlinkSync(audioFile);
 
         console.log("✅ Música enviada");
         return;
