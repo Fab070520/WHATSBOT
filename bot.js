@@ -13,11 +13,11 @@ import { execSync, exec } from "child_process";
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-// 🔥 instalar TODO en runtime (clave Railway)
+// 🔥 instalar dependencias en runtime
 try {
   execSync("apt-get update && apt-get install -y python3 ffmpeg yt-dlp");
   console.log("✅ Python + ffmpeg + yt-dlp listos");
-} catch (e) {
+} catch {
   console.log("⚠️ Dependencias ya instaladas");
 }
 
@@ -32,8 +32,6 @@ async function start() {
     auth: state,
     version,
     printQRInTerminal: false,
-
-    // 🔥 estabilidad
     syncFullHistory: false,
     markOnlineOnConnect: true,
     keepAliveIntervalMs: 30000,
@@ -116,7 +114,7 @@ async function start() {
       }
 
       // ========================
-      // 🎵 MUSICA (FIX REAL)
+      // 🎵 MUSICA (FIX FINAL PRO)
       // ========================
       if (text.toLowerCase().startsWith(".music")) {
         const query = text.replace(".music", "").trim();
@@ -132,11 +130,17 @@ async function start() {
           text: "⏳ Descargando música..."
         });
 
-        const filename = `audio_${Date.now()}.mp3`;
+        const base = `audio_${Date.now()}`;
+        const m4a = `${base}.m4a`;
+        const mp3 = `${base}.mp3`;
 
         exec(
-          `yt-dlp -x --audio-format mp3 -o "${filename}" "ytsearch1:${query}"`,
-          async (error) => {
+          `yt-dlp -f "bestaudio[ext=m4a]/bestaudio" --no-playlist --geo-bypass --no-check-certificates -o "${m4a}" "ytsearch1:${query}"`,
+          { timeout: 40000 },
+          async (error, stdout, stderr) => {
+
+            console.log("YT-DLP:", stdout, stderr);
+
             if (error) {
               console.log("❌ yt-dlp error:", error);
 
@@ -146,19 +150,33 @@ async function start() {
               return;
             }
 
+            if (!fs.existsSync(m4a)) {
+              await sock.sendMessage(from, {
+                text: "❌ No se pudo obtener el audio"
+              });
+              return;
+            }
+
             try {
-              const audio = fs.readFileSync(filename);
+              execSync(`ffmpeg -i "${m4a}" -vn -ab 128k -ar 44100 -y "${mp3}"`);
+
+              const audio = fs.readFileSync(mp3);
 
               await sock.sendMessage(from, {
                 audio: audio,
                 mimetype: "audio/mpeg"
               });
 
-              fs.unlinkSync(filename);
+              fs.unlinkSync(m4a);
+              fs.unlinkSync(mp3);
 
               console.log("🎵 música enviada");
             } catch (err) {
-              console.log("❌ ERROR:", err);
+              console.log("❌ ERROR ffmpeg:", err);
+
+              await sock.sendMessage(from, {
+                text: "❌ Error procesando audio"
+              });
             }
           }
         );
